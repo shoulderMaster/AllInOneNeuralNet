@@ -51,57 +51,101 @@ SupurPowerElegantlyAutomaticIndepententIndividualMultipleRNN
 
 class CheckPointConfiguration :
     def __init__(self) :
-        self.pathOfCheckpoint = "./model_export/simulater_190107_dropout10_4stacked_6recurrent"
+        #self.pathOfCheckpoint = "./model_export/simulater_190108_dropout30_3hiddenLayer_512"
+        self.pathOfCheckpoint = "./model_export/simulater_190108_dropout10_4stacked_6recurrent"
         self.filenameOfCheckpoint = "/model_data"
         self.save_step= 200
 
 
 class InputDataConfiguration :
-    def __init__(self) :
-        self.pathOfRNNinputData = "./RNN_input_data.csv"
-        self.num_input = 7
-        self.num_label = 3
-        self.train_ratio = 0.7
-        self.numRecurrent = 8
+    def __init__(self, LSTM=None, DNN=None) :
 
+        if LSTM == True :
+            self.pathOfinputData = "./RNN_input_data.csv"
+            self.num_input = 7
+            self.num_label = 3
+            self.train_ratio = 0.7
+            self.numRecurrent = 8
+
+        if DNN == True :
+            self.pathOfinputData = "./DNN_input_data.csv"
+            self.num_input = 7
+            self.num_label = 3
+            self.train_ratio = 0.7
 
 class LearningConfiguration :
-    def __init__(self) :
-        #learning configuration
-        self.resultPath = "result_190107_dropout10_4stacked_6recurrent.csv"
-        self.batchDivider = 8
-        self.learning_rate = 0.05
-        self.dropoutRate = 0.1
-        self.output_keep_prob = 1 - self.dropoutRate
-        self.input_keep_prob = 1 - self.dropoutRate
-        self.rnnHiddenDim = 64
-        self.rnnMultiCellNum = 4
-        self.numLearningEpoch = 2000
-        self.display_step = 30
+    def __init__(self, LSTM=None, DNN=None) :
+
+        if LSTM == True :
+            self.resultPath = "result_190108_dropout10_4stacked_6recurrent.csv"
+            self.batchDivider = 8
+            self.learning_rate = 0.05
+            self.dropoutRate = 0.1
+            self.output_keep_prob = 1 - self.dropoutRate
+            self.input_keep_prob = 1 - self.dropoutRate
+            self.rnnHiddenDim = 64
+            self.rnnMultiCellNum = 4
+            self.numLearningEpoch = 2000
+            self.display_step = 30
+
+        if DNN == True :
+            self.resultPath = "result_190108_dropout30_3hiddenLayer_512.csv"
+            self.batchDivider = 8
+            self.learning_rate = 0.05
+            self.dropoutRate = 0.1
+            self.input_keep_prob = 1 - self.dropoutRate
+            self.numLearningEpoch = 2000
+            self.display_step = 30
+            self.n_hidden_1 = 512
+            self.n_hidden_2 = 512
+            self.n_hidden_3 = 512
 
 class Configuration :
-    def __init__(self) :
-        self.learning = LearningConfiguration()
-        self.inputData = InputDataConfiguration()
-        self.checkPoint = CheckPointConfiguration()
+    def __init__(self, LSTM=None, DNN=None) :
+
+        if LSTM == True :
+            self.learning = LearningConfiguration(LSTM=True)
+            self.inputData = InputDataConfiguration(LSTM=True)
+            self.checkPoint = CheckPointConfiguration()
+
+        if DNN == True :
+            self.learning = LearningConfiguration(DNN=True)
+            self.inputData = InputDataConfiguration(DNN=True)
+            self.checkPoint = CheckPointConfiguration()
+
 
 class Model :
-    def __init__(self, RNN) :
-        self.train_op, self.loss_op, self.Y_pred_op, self.saver, self.X, self.Y, self.keep_prob\
-        = RNN._makeSimpleLSTMGraph()
+    def __init__(self,NN, LSTM=None, DNN=None) :
+
+        if LSTM == True :
+            self.train_op, self.loss_op, self.Y_pred_op, self.saver, self.X, self.Y, self.keep_prob\
+            = NN._makeMultipleIndependentLSTMGraph()
+
+        if DNN == True :
+            self.train_op, self.loss_op, self.Y_pred_op, self.saver, self.X, self.Y, self.keep_prob\
+            = NN._makeMultipleIndependentDNNGraph()
 
 class InputData : 
     
-    def __init__(self, inputDataConfiguation) :
-        self.train_x, self.train_y, self.test_x, self.test_y\
-        = self.getInputData(\
-                pathOfRNNinputData=inputDataConfiguation.pathOfRNNinputData,\
-                train_ratio=inputDataConfiguation.train_ratio,\
-                numRecurrent=inputDataConfiguation.numRecurrent,\
-                num_input=inputDataConfiguation.num_input)
+    def __init__(self, inputDataConfiguation, LSTM=None, DNN=None) :
+
+        if LSTM == True :
+            self.train_x, self.train_y, self.test_x, self.test_y\
+            = self.getRNNInputData(\
+                    pathOfRNNinputData=inputDataConfiguation.pathOfinputData,\
+                    train_ratio=inputDataConfiguation.train_ratio,\
+                    numRecurrent=inputDataConfiguation.numRecurrent,\
+                    num_input=inputDataConfiguation.num_input)
+
+        if DNN == True :
+            self.train_x, self.train_y, self.test_x, self.test_y\
+            = self.getDNNInputData(\
+                    pathOfDNNinputData=inputDataConfiguation.pathOfinputData,\
+                    train_ratio=inputDataConfiguation.train_ratio,\
+                    num_input=inputDataConfiguation.num_input)
         
 
-    def getInputData(\
+    def getRNNInputData(\
             self,\
             pathOfRNNinputData,\
             train_ratio,\
@@ -147,6 +191,37 @@ class InputData :
         rnn_train_x, rnn_train_y = self._shuffleList(rnn_train_x, rnn_train_y)
 
         return rnn_train_x, rnn_train_y, rnn_test_x, rnn_test_y
+    
+    def getDNNInputData(\
+            self,\
+            pathOfDNNinputData,\
+            train_ratio,\
+            num_input) :
+
+        data_df = pd.read_csv(pathOfDNNinputData).set_index("datetime")
+        data_df.index = pd.to_datetime(data_df.index)
+
+        div_num = int(len(data_df.index)*train_ratio)
+
+        train_df = data_df.iloc[:div_num,:]
+        test_df = data_df.iloc[div_num:,:]
+
+        x_train_df = train_df.iloc[:,:num_input]
+        x_test_df = test_df.iloc[:,:num_input]
+        y_train_df = train_df.iloc[:,num_input:]
+        y_test_df = test_df.iloc[:,num_input:]
+
+        mean = x_train_df.mean()
+        std = x_train_df.std() + 0.00001
+
+        x_train_list = ((x_train_df-mean)/std).values.tolist()
+        y_train_list = y_train_df.values.tolist()
+        x_test_list = ((x_test_df-mean)/std).values.tolist()
+        y_test_list = y_test_df.values.tolist()
+
+        x_train_list, y_train_list= self._shuffleList(x_train_list, y_train_list)
+
+        return x_train_list, y_train_list, x_test_list, y_test_list
 
     def _shuffleList(self, listX, listY) :
         tupleList = [(listX[i], listY[i]) for i in range(0, len(listY))]
@@ -155,19 +230,115 @@ class InputData :
         listY = [tupleList[i][1] for i in range(0, len(listY))]
         return listX, listY
 
-    
-        
-
 
 class SupurPowerElegantAutomaticNeuralNetwork :
 
-    def __init__(self) :
-        self.config = Configuration()
-        self.model = Model(self)
-        self.inputData = InputData(self.config.inputData)
+    def __init__(self, LSTM=None, DNN=None) :
+
+        if LSTM == True :
+            self.config = Configuration(LSTM=True)
+            self.model = Model(self, LSTM=True)
+            self.inputData = InputData(self.config.inputData, LSTM=True)
+
+        if DNN == True :
+            self.config = Configuration(DNN=True)
+            self.model = Model(self, DNN=True)
+            self.inputData = InputData(self.config.inputData, DNN=True)
+
         self.result = []
         if not os.path.exists(self.config.checkPoint.pathOfCheckpoint):
             os.makedirs(self.config.checkPoint.pathOfCheckpoint)
+
+    def _makeMultipleIndependentDNNGraph(\
+            self,\
+            num_input=None,\
+            num_label=None,\
+            n_hidden_1=None,\
+            n_hidden_2=None,\
+            n_hidden_3=None,\
+            learning_rate=None,\
+            ) :
+
+        if num_input == None :
+            num_input=self.config.inputData.num_input
+            num_label=self.config.inputData.num_label
+            n_hidden_1=self.config.learning.n_hidden_1
+            n_hidden_2=self.config.learning.n_hidden_2
+            n_hidden_3=self.config.learning.n_hidden_3
+            learning_rate=self.config.learning.learning_rate
+
+        tf.reset_default_graph()
+        g = tf.Graph()
+        g.as_default()
+
+        X = tf.placeholder(tf.float32, shape=(None, num_input))
+        Y = tf.placeholder(tf.float32, shape=(None, num_label))
+        keep_prob = tf.placeholder(tf.float32)
+
+        initializer = tf.contrib.layers.xavier_initializer()
+
+        weights = {
+            'h1': [tf.Variable(initializer([num_input, n_hidden_1])) for i in range(0,num_label)],
+            'h2': [tf.Variable(initializer([n_hidden_1, n_hidden_2])) for i in range(0,num_label)],
+            'h3': [tf.Variable(initializer([n_hidden_2, n_hidden_3])) for i in range(0,num_label)],
+            'out': [tf.Variable(initializer([n_hidden_3, 1])) for i in range(0,num_label)]
+        }
+
+
+        biases = {
+            'b1': [tf.Variable(initializer([n_hidden_1,])) for i in range(0,num_label)],
+            'b2': [tf.Variable(initializer([n_hidden_2,])) for i in range(0,num_label)],
+            'b3': [tf.Variable(initializer([n_hidden_3,])) for i in range(0,num_label)],
+            'out': [tf.Variable(initializer([1,])) for i in range(0, num_label)]
+        }
+
+        out_layer = []
+        for i in range(0, num_label) :
+
+            # Hidden fully connected layer with 512 neurons
+           #wx1 = tf.matmul(x, weights['h1'][i])
+            wx1 =tf.add(tf.matmul(X, weights['h1'][i]), biases['b1'][i])
+           #bn1 = tf.layers.batch_normalization(
+           #    inputs=wx1,
+           #    momentum=0.9,
+           #    epsilon=0.001,
+           #    center=True,
+           #    scale=True,
+           #    training = is_training,
+           #)
+
+            layer_1 = tf.nn.sigmoid(wx1)
+            layer_1 = tf.nn.dropout(layer_1, keep_prob)
+
+            # Hidden fully connected layer with 512 neurons
+           #wx2 = tf.matmul(layer_1, weights['h2'][i])
+            wx2 = tf.add(tf.matmul(layer_1, weights['h2'][i]), biases['b2'][i])
+           #bn2 = tf.layers.batch_normalization(
+           #    inputs=wx2,
+           #    momentum=0.9,
+           #    epsilon=0.001,
+           #    center=True,
+           #    scale=True,
+           #    training = is_training,
+           #)
+            layer_2 = tf.nn.sigmoid(wx2)
+           #layer_2 = tf.add(tf.matmul(layer_1, weights['h2'][i]), biases['b2'][i])
+            layer_2 = tf.nn.dropout(layer_2, keep_prob)
+
+            layer_3 = tf.add(tf.matmul(layer_2, weights['h3'][i]), biases['b3'][i])
+           #layer_3 = tf.nn.sigmoid(layer_3)
+            layer_3 = tf.nn.dropout(layer_3, keep_prob)
+
+            out_layer += [tf.add(tf.matmul(layer_3, weights['out'][i]), biases['out'][i], name="pred")]
+        #make prediction tensor with shape (none, 46)
+        Y_pred = tf.squeeze(tf.stack(out_layer, axis=1), 2)
+
+        loss_op = tf.reduce_mean(tf.pow(Y_pred-Y,2), 0)
+        optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+        train_op = optimizer.minimize(loss_op, name="train_op")
+        saver = tf.train.Saver()
+
+        return train_op, loss_op, Y_pred, saver, X, Y, keep_prob
 
     def _makeMultipleIndependentLSTMGraph(\
             self,\
@@ -304,7 +475,6 @@ class SupurPowerElegantAutomaticNeuralNetwork :
             saver=self.model.saver
             howManyEpoch=self.config.learning.numLearningEpoch
             display_step=self.config.learning.display_step
-            output_keep_prob=self.config.learning.output_keep_prob
             input_keep_prob=self.config.learning.input_keep_prob
             save_step=self.config.checkPoint.save_step
             pathOfCheckpoint=self.config.checkPoint.pathOfCheckpoint
@@ -428,7 +598,7 @@ class SupurPowerElegantAutomaticNeuralNetwork :
         return accuracyList
 
 def main() :
-    RNN = SupurPowerElegantAutomaticNeuralNetwork()
+    RNN = SupurPowerElegantAutomaticNeuralNetwork(DNN=True)
     RNN.doTraining()
     RNN.saveResultAsCSV()
 
