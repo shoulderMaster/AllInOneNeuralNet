@@ -50,11 +50,17 @@ SupurPowerElegantlyAutomaticIndepententIndividualMultipleRNN
 '''
 
 class CheckPointConfiguration :
-    def __init__(self) :
-        #self.pathOfCheckpoint = "./model_export/simulater_190108_dropout30_3hiddenLayer_512"
-        self.pathOfCheckpoint = "./model_export/simulater_190108_dropout10_4stacked_6recurrent"
-        self.filenameOfCheckpoint = "/model_data"
-        self.save_step= 200
+    def __init__(self, LSTM=None, DNN=None) :
+
+        if LSTM == True :
+            self.pathOfCheckpoint = "./model_export/dropout30_3stacked_3recurrent_mistake"
+            self.filenameOfCheckpoint = "/model_data"
+            self.save_step= 200
+
+        if DNN == True :
+            self.pathOfCheckpoint = "./model_export/dropout30_3hiddenLayer_512_litePreproc"
+            self.filenameOfCheckpoint = "/model_data"
+            self.save_step= 200
 
 
 class InputDataConfiguration :
@@ -62,39 +68,41 @@ class InputDataConfiguration :
 
         if LSTM == True :
             self.pathOfinputData = "./RNN_input_data.csv"
-            self.num_input = 7
-            self.num_label = 3
+            self.num_input = 6
+            self.num_label = 2
             self.train_ratio = 0.7
-            self.numRecurrent = 8
+            self.numRecurrent = 3
+            self.labelList = ["Active Power (W)", "Generator Speed (RPM)"]
 
         if DNN == True :
-            self.pathOfinputData = "./DNN_input_data.csv"
-            self.num_input = 7
-            self.num_label = 3
+            self.pathOfinputData = "./RNN_input_data.csv"
+            self.num_input = 6
+            self.num_label = 2
             self.train_ratio = 0.7
+            self.labelList = ["Active Power (W)", "Generator Speed (RPM)"]
 
 class LearningConfiguration :
     def __init__(self, LSTM=None, DNN=None) :
 
         if LSTM == True :
-            self.resultPath = "result_190108_dropout10_4stacked_6recurrent.csv"
+            self.resultPath = "result.csv"
             self.batchDivider = 8
             self.learning_rate = 0.05
-            self.dropoutRate = 0.1
+            self.dropoutRate = 0.3
             self.output_keep_prob = 1 - self.dropoutRate
             self.input_keep_prob = 1 - self.dropoutRate
             self.rnnHiddenDim = 64
-            self.rnnMultiCellNum = 4
-            self.numLearningEpoch = 2000
+            self.rnnMultiCellNum = 3
+            self.numLearningEpoch = 2000+1
             self.display_step = 30
 
         if DNN == True :
-            self.resultPath = "result_190108_dropout30_3hiddenLayer_512.csv"
+            self.resultPath = "result.csv"
             self.batchDivider = 8
-            self.learning_rate = 0.05
-            self.dropoutRate = 0.1
+            self.learning_rate = 0.005
+            self.dropoutRate = 0.3
             self.input_keep_prob = 1 - self.dropoutRate
-            self.numLearningEpoch = 2000
+            self.numLearningEpoch = 2000+1
             self.display_step = 30
             self.n_hidden_1 = 512
             self.n_hidden_2 = 512
@@ -106,12 +114,12 @@ class Configuration :
         if LSTM == True :
             self.learning = LearningConfiguration(LSTM=True)
             self.inputData = InputDataConfiguration(LSTM=True)
-            self.checkPoint = CheckPointConfiguration()
+            self.checkPoint = CheckPointConfiguration(LSTM=True)
 
         if DNN == True :
             self.learning = LearningConfiguration(DNN=True)
             self.inputData = InputDataConfiguration(DNN=True)
-            self.checkPoint = CheckPointConfiguration()
+            self.checkPoint = CheckPointConfiguration(DNN=True)
 
 
 class Model :
@@ -119,7 +127,7 @@ class Model :
 
         if LSTM == True :
             self.train_op, self.loss_op, self.Y_pred_op, self.saver, self.X, self.Y, self.keep_prob\
-            = NN._makeMultipleIndependentLSTMGraph()
+            = NN._makeDeepLSTMGraph_workWellButIDontKnowWhy()
 
         if DNN == True :
             self.train_op, self.loss_op, self.Y_pred_op, self.saver, self.X, self.Y, self.keep_prob\
@@ -212,7 +220,7 @@ class InputData :
         y_test_df = test_df.iloc[:,num_input:]
 
         mean = x_train_df.mean()
-        std = x_train_df.std() + 0.00001
+        std = x_train_df.std() + 0.0001
 
         x_train_list = ((x_train_df-mean)/std).values.tolist()
         y_train_list = y_train_df.values.tolist()
@@ -295,42 +303,21 @@ class SupurPowerElegantAutomaticNeuralNetwork :
         out_layer = []
         for i in range(0, num_label) :
 
-            # Hidden fully connected layer with 512 neurons
-           #wx1 = tf.matmul(x, weights['h1'][i])
             wx1 =tf.add(tf.matmul(X, weights['h1'][i]), biases['b1'][i])
-           #bn1 = tf.layers.batch_normalization(
-           #    inputs=wx1,
-           #    momentum=0.9,
-           #    epsilon=0.001,
-           #    center=True,
-           #    scale=True,
-           #    training = is_training,
-           #)
-
             layer_1 = tf.nn.sigmoid(wx1)
             layer_1 = tf.nn.dropout(layer_1, keep_prob)
 
-            # Hidden fully connected layer with 512 neurons
-           #wx2 = tf.matmul(layer_1, weights['h2'][i])
             wx2 = tf.add(tf.matmul(layer_1, weights['h2'][i]), biases['b2'][i])
-           #bn2 = tf.layers.batch_normalization(
-           #    inputs=wx2,
-           #    momentum=0.9,
-           #    epsilon=0.001,
-           #    center=True,
-           #    scale=True,
-           #    training = is_training,
-           #)
             layer_2 = tf.nn.sigmoid(wx2)
-           #layer_2 = tf.add(tf.matmul(layer_1, weights['h2'][i]), biases['b2'][i])
             layer_2 = tf.nn.dropout(layer_2, keep_prob)
 
-            layer_3 = tf.add(tf.matmul(layer_2, weights['h3'][i]), biases['b3'][i])
-           #layer_3 = tf.nn.sigmoid(layer_3)
+            wx3 = tf.add(tf.matmul(layer_2, weights['h3'][i]), biases['b3'][i])
+            layer_3 = tf.nn.leaky_relu(wx3)
             layer_3 = tf.nn.dropout(layer_3, keep_prob)
 
-            out_layer += [tf.add(tf.matmul(layer_3, weights['out'][i]), biases['out'][i], name="pred")]
-        #make prediction tensor with shape (none, 46)
+            pred = tf.add(tf.matmul(layer_3, weights['out'][i]), biases['out'][i], name="pred")
+            out_layer.append(pred)
+
         Y_pred = tf.squeeze(tf.stack(out_layer, axis=1), 2)
 
         loss_op = tf.reduce_mean(tf.pow(Y_pred-Y,2), 0)
@@ -340,7 +327,7 @@ class SupurPowerElegantAutomaticNeuralNetwork :
 
         return train_op, loss_op, Y_pred, saver, X, Y, keep_prob
 
-    def _makeMultipleIndependentLSTMGraph(\
+    def _makeDeepLSTMGraph(\
             self,\
             seq_length=None,\
             input_dim=None,\
@@ -365,25 +352,97 @@ class SupurPowerElegantAutomaticNeuralNetwork :
         Y = tf.placeholder(tf.float32, [None, output_dim], name="Y")
         keep_prob = tf.placeholder(tf.float32, name="keep_prob")
         
-        out_layer = []
-        for i in range(output_dim) :
-            cell = [] #empty object
-            if (rnnMultiCellNum > 1) :
-                cells = [tf.contrib.rnn.BasicLSTMCell(num_units=output_dim, state_is_tuple=True, activation=tf.nn.leaky_relu) for i in range(rnnMultiCellNum-1)]
-                output_cell = tf.contrib.rnn.BasicLSTMCell(num_units=output_dim, state_is_tuple=True, activation=tf.nn.leaky_relu)
-                output_cell = tf.nn.rnn_cell.DropoutWrapper(cell=output_cell, input_keep_prob=keep_prob)
-                cells.append(output_cell)
-                cell = tf.contrib.rnn.MultiRNNCell(cells, state_is_tuple=True)
-            else :
-                cell = tf.contrib.rnn.BasicLSTMCell(num_units=output_dim, state_is_tuple=True) 
-
-            outputs, _states = tf.nn.dynamic_rnn(cell, X, dtype=tf.float32)
-            Y_pred_cell = tf.contrib.layers.fully_connected(outputs[:,-1], output_dim, activation_fn=None)
-            out_layer.append(Y_pred_cell)
-
-        Y_pred = tf.squeeze(tf.stack(out_layer, axis=1), 2)
-        loss = tf.reduce_mean(tf.square(Y_pred-Y))
+        rnnLayerDimList = []
+        if (rnnMultiCellNum == 2) :
+            rnnLayerDimList = [output_dim]
+        elif (rnnMultiCellNum == 3) :
+            rnnLayerDimList = [output_dim**2, output_dim]
+        elif (rnnMultiCellNum == 4) :
+            rnnLayerDimList = [output_dim*4, output_dim*2, output_dim]
+        elif (rnnMultiCellNum == 5) :
+            rnnLayerDimList = [output_dim*8, output_dim*4, output_dim*2, output_dim]
+        elif (rnnMultiCellNum == 6) :
+            rnnLayerDimList = [output_dim*8, output_dim*4, output_dim*2, output_dim, output_dim]
         
+        cell = []
+        if (rnnMultiCellNum > 1) :
+            print("this rnn model has %d stacked cells" % rnnMultiCellNum)
+            cells = [tf.contrib.rnn.BasicLSTMCell(num_units=nn_hidden_dim, state_is_tuple=True, activation=tf.nn.sigmoid) for nn_hidden_dim in rnnLayerDimList[:2]]
+            cells += [tf.contrib.rnn.BasicLSTMCell(num_units=nn_hidden_dim, state_is_tuple=True, activation=tf.nn.leaky_relu) for nn_hidden_dim in rnnLayerDimList[2:]]
+            output_cell = tf.contrib.rnn.BasicLSTMCell(num_units=output_dim, state_is_tuple=True, activation=tf.nn.leaky_relu)
+            #output_cell = tf.nn.rnn_cell.DropoutWrapper(cell=output_cell, input_keep_prob=keep_prob)
+            cells.append(output_cell)
+            cell = tf.contrib.rnn.MultiRNNCell(cells, state_is_tuple=True)
+        else :
+            cell = tf.contrib.rnn.BasicLSTMCell(num_units=output_dim, state_is_tuple=True) 
+
+        outputs, _states = tf.nn.dynamic_rnn(cell, X, dtype=tf.float32)
+        
+        Y_pred = tf.contrib.layers.fully_connected(outputs[:,-1], output_dim, activation_fn=None)
+        loss = tf.reduce_mean(tf.square(Y_pred-Y), 0)
+
+        optimizer = tf.train.AdamOptimizer(learning_rate)
+        train = optimizer.minimize(loss)
+
+        saver = tf.train.Saver()
+        
+        return train, loss, Y_pred, saver, X, Y, keep_prob
+
+    def _makeDeepLSTMGraph_workWellButIDontKnowWhy(\
+            self,\
+            seq_length=None,\
+            input_dim=None,\
+            output_dim=None,\
+            hidden_dim=None,\
+            learning_rate=None,\
+            rnnMultiCellNum=None) :
+
+        if seq_length == None :
+            seq_length=self.config.inputData.numRecurrent
+            input_dim=self.config.inputData.num_input
+            output_dim=self.config.inputData.num_label
+            hidden_dim=self.config.learning.rnnHiddenDim
+            learning_rate=self.config.learning.learning_rate
+            rnnMultiCellNum=self.config.learning.rnnMultiCellNum
+
+        tf.reset_default_graph()
+        g = tf.Graph()
+        g.as_default()
+
+        X = tf.placeholder(tf.float32, [None, seq_length, input_dim], name="X")
+        Y = tf.placeholder(tf.float32, [None, output_dim], name="Y")
+        keep_prob = tf.placeholder(tf.float32, name="keep_prob")
+        
+        rnnLayerDimList = []
+        if (rnnMultiCellNum == 2) :
+            rnnLayerDimList = [output_dim]
+        elif (rnnMultiCellNum == 3) :
+            rnnLayerDimList = [output_dim**2, output_dim]
+        elif (rnnMultiCellNum == 4) :
+            rnnLayerDimList = [output_dim*4, output_dim*2, output_dim]
+        elif (rnnMultiCellNum == 5) :
+            rnnLayerDimList = [output_dim*8, output_dim*4, output_dim*2, output_dim]
+        elif (rnnMultiCellNum == 6) :
+            rnnLayerDimList = [output_dim*8, output_dim*4, output_dim*2, output_dim, output_dim]
+        
+        cell = []
+        if (rnnMultiCellNum > 1) :
+            print("this rnn model has %d stacked cells" % rnnMultiCellNum)
+            cells = [tf.contrib.rnn.BasicLSTMCell(num_units=nn_hidden_dim, state_is_tuple=True, activation=tf.nn.sigmoid) for nn_hidden_dim in rnnLayerDimList[:2]]
+            cells += [tf.contrib.rnn.BasicLSTMCell(num_units=nn_hidden_dim, state_is_tuple=True, activation=tf.nn.leaky_relu) for nn_hidden_dim in rnnLayerDimList[2:]]
+            output_cell = tf.contrib.rnn.BasicLSTMCell(num_units=output_dim, state_is_tuple=True, activation=tf.nn.leaky_relu)
+            #output_cell = tf.nn.rnn_cell.DropoutWrapper(cell=output_cell, input_keep_prob=keep_prob)
+            cells.append(output_cell)
+            _dropoout_cells_unused_but_workWell = [tf.nn.rnn_cell.DropoutWrapper(cell=rnn_cell, output_keep_prob=keep_prob) for rnn_cell in cells]
+            cell = tf.contrib.rnn.MultiRNNCell(cells, state_is_tuple=True)
+        else :
+            cell = tf.contrib.rnn.BasicLSTMCell(num_units=output_dim, state_is_tuple=True) 
+
+        outputs, _states = tf.nn.dynamic_rnn(cell, X, dtype=tf.float32)
+        
+        Y_pred = tf.contrib.layers.fully_connected(outputs[:,-1], output_dim, activation_fn=None)
+        loss = tf.reduce_mean(tf.square(Y_pred-Y), 0)
+
         optimizer = tf.train.AdamOptimizer(learning_rate)
         train = optimizer.minimize(loss)
 
@@ -566,7 +625,7 @@ class SupurPowerElegantAutomaticNeuralNetwork :
             predDfList.append(predDf)
             labelDfList.append(labelDf)
         toPrint = ""
-        labelList = ["Rotor Speed (RPM)", "Active Power (W)", "Generator Speed (RPM)"]
+        labelList = self.config.inputData.labelList
         for idx in range(len(predDfList)) :
             toPrint += ("-"*32 + "  %s  " + "-"*32+"\n") % labelList[idx]
             toPrint += "%20s | %20s | %12s | %24s\n" % ("base percentage", "underbase value", "deviation", "10% inner count ratio")
@@ -598,7 +657,7 @@ class SupurPowerElegantAutomaticNeuralNetwork :
         return accuracyList
 
 def main() :
-    RNN = SupurPowerElegantAutomaticNeuralNetwork(DNN=True)
+    RNN = SupurPowerElegantAutomaticNeuralNetwork(LSTM=True)
     RNN.doTraining()
     RNN.saveResultAsCSV()
 
