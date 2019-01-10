@@ -53,21 +53,21 @@ class CheckPointConfiguration :
     def __init__(self, LSTM=None, DNN=None) :
 
         if LSTM == True :
-            self.pathOfCheckpoint = "./model_export/dropout30_3stacked_3recurrent_mistake"
+            self.pathOfCheckpoint = "./model_export/lstm_experiment/3_3"
             self.filenameOfCheckpoint = "/model_data"
             self.save_step= 200
 
         if DNN == True :
-            self.pathOfCheckpoint = "./model_export/dropout30_3hiddenLayer_512_litePreproc"
+            self.pathOfCheckpoint = "./model_export/dropout30_superDeep"
             self.filenameOfCheckpoint = "/model_data"
-            self.save_step= 200
+            self.save_step= 30
 
 
 class InputDataConfiguration :
     def __init__(self, LSTM=None, DNN=None) :
 
         if LSTM == True :
-            self.pathOfinputData = "./RNN_input_data.csv"
+            self.pathOfinputData = "./DNN_input_data.csv"
             self.num_input = 6
             self.num_label = 2
             self.train_ratio = 0.7
@@ -85,7 +85,7 @@ class LearningConfiguration :
     def __init__(self, LSTM=None, DNN=None) :
 
         if LSTM == True :
-            self.resultPath = "result.csv"
+            self.resultPath = "result_LSTM.csv"
             self.batchDivider = 8
             self.learning_rate = 0.05
             self.dropoutRate = 0.3
@@ -93,20 +93,22 @@ class LearningConfiguration :
             self.input_keep_prob = 1 - self.dropoutRate
             self.rnnHiddenDim = 64
             self.rnnMultiCellNum = 3
-            self.numLearningEpoch = 2000+1
+            self.numLearningEpoch = 1000
             self.display_step = 30
 
         if DNN == True :
-            self.resultPath = "result.csv"
+            self.resultPath = "result_DNN.csv"
             self.batchDivider = 8
             self.learning_rate = 0.005
-            self.dropoutRate = 0.3
+            self.dropoutRate = 0.05
             self.input_keep_prob = 1 - self.dropoutRate
-            self.numLearningEpoch = 2000+1
-            self.display_step = 30
+            self.numLearningEpoch = 10000+1
+            self.display_step = 5
             self.n_hidden_1 = 512
             self.n_hidden_2 = 512
             self.n_hidden_3 = 512
+            self.hiddenLayer = 10
+            self.n_hidden = 512
 
 class Configuration :
     def __init__(self, LSTM=None, DNN=None) :
@@ -127,11 +129,11 @@ class Model :
 
         if LSTM == True :
             self.train_op, self.loss_op, self.Y_pred_op, self.saver, self.X, self.Y, self.keep_prob\
-            = NN._makeDeepLSTMGraph_workWellButIDontKnowWhy()
+            = NN._makeSimpleLSTMGraph()
 
         if DNN == True :
             self.train_op, self.loss_op, self.Y_pred_op, self.saver, self.X, self.Y, self.keep_prob\
-            = NN._makeMultipleIndependentDNNGraph()
+            = NN._makeSuperDeepMultipleIndependentDNNGraph()
 
 class InputData : 
     
@@ -304,18 +306,20 @@ class SupurPowerElegantAutomaticNeuralNetwork :
         for i in range(0, num_label) :
 
             wx1 =tf.add(tf.matmul(X, weights['h1'][i]), biases['b1'][i])
-            layer_1 = tf.nn.sigmoid(wx1)
+            layer_1 = tf.nn.tanh(wx1)
             layer_1 = tf.nn.dropout(layer_1, keep_prob)
 
             wx2 = tf.add(tf.matmul(layer_1, weights['h2'][i]), biases['b2'][i])
-            layer_2 = tf.nn.sigmoid(wx2)
+            layer_2 = tf.nn.leaky_relu(wx2)
             layer_2 = tf.nn.dropout(layer_2, keep_prob)
 
             wx3 = tf.add(tf.matmul(layer_2, weights['h3'][i]), biases['b3'][i])
-            layer_3 = tf.nn.leaky_relu(wx3)
+            layer_3 = wx3
+            layer_3 = tf.nn.tanh(wx3)
             layer_3 = tf.nn.dropout(layer_3, keep_prob)
 
             pred = tf.add(tf.matmul(layer_3, weights['out'][i]), biases['out'][i], name="pred")
+            #pred = tf.add(tf.matmul(layer_2, weights['out'][i]), biases['out'][i], name="pred")
             out_layer.append(pred)
 
         Y_pred = tf.squeeze(tf.stack(out_layer, axis=1), 2)
@@ -327,6 +331,89 @@ class SupurPowerElegantAutomaticNeuralNetwork :
 
         return train_op, loss_op, Y_pred, saver, X, Y, keep_prob
 
+    def _makeSuperDeepMultipleIndependentDNNGraph(\
+            self,\
+            num_input=None,\
+            num_label=None,\
+            n_hidden_1=None,\
+            n_hidden_2=None,\
+            n_hidden_3=None,\
+            learning_rate=None,\
+            hiddenLayer=None
+            ) :
+
+        if num_input == None :
+            num_input=self.config.inputData.num_input
+            num_label=self.config.inputData.num_label
+            n_hidden_1=self.config.learning.n_hidden_1
+            n_hidden_2=self.config.learning.n_hidden_2
+            n_hidden_3=self.config.learning.n_hidden_3
+            learning_rate=self.config.learning.learning_rate
+            hiddenLayer=self.config.learning.hiddenLayer
+            n_hidden=self.config.learning.n_hidden
+
+        tf.reset_default_graph()
+        g = tf.Graph()
+        g.as_default()
+
+        X = tf.placeholder(tf.float32, shape=(None, num_input))
+        Y = tf.placeholder(tf.float32, shape=(None, num_label))
+        keep_prob = tf.placeholder(tf.float32)
+
+        initializer = tf.contrib.layers.xavier_initializer()
+        he_initializer = tf.contrib.layers.variance_scaling_initializer()
+
+        weights = {
+            'h1': [tf.Variable(initializer([num_input, n_hidden])) for i in range(0,num_label)],
+            'out': [tf.Variable(initializer([n_hidden, 1])) for i in range(0,num_label)]
+        }
+
+
+        biases = {
+            'b1': [tf.Variable(initializer([n_hidden,])) for i in range(0,num_label)],
+            'out': [tf.Variable(initializer([1,])) for i in range(0, num_label)]
+        }
+
+        out_layer = []
+
+        def _makeWX(inputLayer) :
+            layer = object()
+            for i in range(0, hiddenLayer) :
+                if i != (hiddenLayer-1) :
+                    weights = tf.Variable(he_initializer([n_hidden, n_hidden]))
+                    biases = tf.Variable(he_initializer([n_hidden,]))
+                    wx = tf.add(tf.matmul(inputLayer, weights), biases)
+                    layer = tf.nn.leaky_relu(wx)
+                else :
+                    weights = tf.Variable(initializer([n_hidden, n_hidden]))
+                    biases = tf.Variable(initializer([n_hidden,]))
+                    wx = tf.add(tf.matmul(inputLayer, weights), biases)
+                    layer = tf.nn.sigmoid(wx)
+                layer = tf.nn.dropout(layer, keep_prob)
+
+                inputLayer = layer
+            return layer
+
+        for i in range(0, num_label) :
+
+            wx1 = tf.add(tf.matmul(X, weights['h1'][i]), biases['b1'][i])
+            layer_1 = tf.nn.sigmoid(wx1)
+            layer_1 = tf.nn.dropout(layer_1, keep_prob)
+
+            last_layer = _makeWX(layer_1)
+
+            pred = tf.add(tf.matmul(last_layer, weights['out'][i]), biases['out'][i], name="pred")
+            #pred = tf.add(tf.matmul(layer_2, weights['out'][i]), biases['out'][i], name="pred")
+            out_layer.append(pred)
+
+        Y_pred = tf.squeeze(tf.stack(out_layer, axis=1), 2)
+
+        loss_op = tf.reduce_mean(tf.pow(Y_pred-Y,2), 0)
+        optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+        train_op = optimizer.minimize(loss_op, name="train_op")
+        saver = tf.train.Saver()
+
+        return train_op, loss_op, Y_pred, saver, X, Y, keep_prob
     def _makeDeepLSTMGraph(\
             self,\
             seq_length=None,\
@@ -478,10 +565,7 @@ class SupurPowerElegantAutomaticNeuralNetwork :
         cell = [] #empty object
         if (rnnMultiCellNum > 1) :
             print("this rnn model has %d stacked cells" % rnnMultiCellNum)
-            cells = [tf.contrib.rnn.BasicLSTMCell(num_units=output_dim, state_is_tuple=True, activation=tf.nn.leaky_relu) for i in range(rnnMultiCellNum-1)]
-            output_cell = tf.contrib.rnn.BasicLSTMCell(num_units=output_dim, state_is_tuple=True, activation=tf.nn.leaky_relu)
-            output_cell = tf.nn.rnn_cell.DropoutWrapper(cell=output_cell, input_keep_prob=keep_prob)
-            cells.append(output_cell)
+            cells = [tf.contrib.rnn.BasicLSTMCell(num_units=output_dim, state_is_tuple=True, activation=tf.nn.leaky_relu) for i in range(rnnMultiCellNum)]
             cell = tf.contrib.rnn.MultiRNNCell(cells, state_is_tuple=True)
         else :
             cell = tf.contrib.rnn.BasicLSTMCell(num_units=output_dim, state_is_tuple=True) 
@@ -489,7 +573,7 @@ class SupurPowerElegantAutomaticNeuralNetwork :
         outputs, _states = tf.nn.dynamic_rnn(cell, X, dtype=tf.float32)
         
         Y_pred = tf.contrib.layers.fully_connected(outputs[:,-1], output_dim, activation_fn=None)
-        loss = tf.reduce_mean(tf.square(Y_pred-Y))
+        loss = tf.reduce_mean(tf.square(Y_pred-Y), 0)
         
         optimizer = tf.train.AdamOptimizer(learning_rate)
         train = optimizer.minimize(loss)
@@ -657,7 +741,7 @@ class SupurPowerElegantAutomaticNeuralNetwork :
         return accuracyList
 
 def main() :
-    RNN = SupurPowerElegantAutomaticNeuralNetwork(LSTM=True)
+    RNN = SupurPowerElegantAutomaticNeuralNetwork(DNN=True)
     RNN.doTraining()
     RNN.saveResultAsCSV()
 
