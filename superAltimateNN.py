@@ -1,7 +1,10 @@
+#!/usr/bin/python3
 import tensorflow as tf
 import pandas as pd
 import os
+import sys
 from random import shuffle
+from shutil import copy2
 
 '''
 SupurPowerElegantlyAutomaticIndepententIndividualMultipleRNN
@@ -53,12 +56,12 @@ class CheckPointConfiguration :
     def __init__(self, LSTM=None, DNN=None) :
 
         if LSTM == True :
-            self.pathOfCheckpoint = "./model_export/lstm_experiment/3_3"
+            self.pathOfCheckpoint = "./model_export/removeActivePower_recurrence4"
             self.filenameOfCheckpoint = "/model_data"
             self.save_step= 200
 
         if DNN == True :
-            self.pathOfCheckpoint = "./model_export/dropout30_superDeep"
+            self.pathOfCheckpoint = "./model_export/removeActivePower_dnn_noPred"
             self.filenameOfCheckpoint = "/model_data"
             self.save_step= 30
 
@@ -67,8 +70,8 @@ class InputDataConfiguration :
     def __init__(self, LSTM=None, DNN=None) :
 
         if LSTM == True :
-            self.pathOfinputData = "./DNN_input_data.csv"
-            self.num_input = 6
+            self.pathOfinputData = "./RNN_input_data_withoutActivePower.csv"
+            self.num_input = 5
             self.num_label = 2
             self.train_ratio = 0.7
             self.numRecurrent = 3
@@ -76,9 +79,10 @@ class InputDataConfiguration :
 
         if DNN == True :
             self.pathOfinputData = "./RNN_input_data.csv"
-            self.num_input = 6
-            self.num_label = 2
+            self.num_input = 5
+            self.num_label = 1
             self.train_ratio = 0.7
+            #self.labelList = ["Active Power (W)", "Derated Power (W)", "Generator Speed (RPM)"]
             self.labelList = ["Active Power (W)", "Generator Speed (RPM)"]
 
 class LearningConfiguration :
@@ -88,25 +92,23 @@ class LearningConfiguration :
             self.resultPath = "result_LSTM.csv"
             self.batchDivider = 8
             self.learning_rate = 0.05
-            self.dropoutRate = 0.3
+            self.dropoutRate = 0.0
             self.output_keep_prob = 1 - self.dropoutRate
             self.input_keep_prob = 1 - self.dropoutRate
             self.rnnHiddenDim = 64
-            self.rnnMultiCellNum = 3
-            self.numLearningEpoch = 1000
+            self.rnnMultiCellNum = 4
+            self.numLearningEpoch = 1020
             self.display_step = 30
 
         if DNN == True :
             self.resultPath = "result_DNN.csv"
             self.batchDivider = 8
-            self.learning_rate = 0.005
-            self.dropoutRate = 0.05
+            self.learning_rate = 0.05
+            self.dropoutRate = 0.3
             self.input_keep_prob = 1 - self.dropoutRate
-            self.numLearningEpoch = 10000+1
-            self.display_step = 5
-            self.n_hidden_1 = 512
-            self.n_hidden_2 = 512
-            self.n_hidden_3 = 512
+            self.numLearningEpoch = 100+1
+            self.display_step = 20
+            self.n_hidden_1 = self.n_hidden_2 = self.n_hidden_3 = 512
             self.hiddenLayer = 10
             self.n_hidden = 512
 
@@ -133,7 +135,7 @@ class Model :
 
         if DNN == True :
             self.train_op, self.loss_op, self.Y_pred_op, self.saver, self.X, self.Y, self.keep_prob\
-            = NN._makeSuperDeepMultipleIndependentDNNGraph()
+            = NN._makeMultipleIndependentDNNGraph()
 
 class InputData : 
     
@@ -148,12 +150,20 @@ class InputData :
                     num_input=inputDataConfiguation.num_input)
 
         if DNN == True :
+            self.std = 0
+            self.mean = 0
+            self.test_x_noNorm = object()
             self.train_x, self.train_y, self.test_x, self.test_y\
-            = self.getDNNInputData(\
+            = self.getDNNInputDataWithUniformalizing(\
                     pathOfDNNinputData=inputDataConfiguation.pathOfinputData,\
                     train_ratio=inputDataConfiguation.train_ratio,\
                     num_input=inputDataConfiguation.num_input)
         
+    def getTestX() :
+        return self.test_x_noNorm
+
+    def getNorm() :
+        return self.std, self.mean
 
     def getRNNInputData(\
             self,\
@@ -177,6 +187,7 @@ class InputData :
 
         mean = x_train_df.mean()
         std = x_train_df.std() + 0.00001
+        std = x_train_df.max() - x_train_df.min() + 0.00001
 
         x_train_list = ((x_train_df-mean)/std).values.tolist()
         y_train_list = y_train_df.values.tolist()
@@ -202,6 +213,54 @@ class InputData :
 
         return rnn_train_x, rnn_train_y, rnn_test_x, rnn_test_y
     
+    def getRNNInputDataWithUniformalizing(\
+            self,\
+            pathOfRNNinputData,\
+            train_ratio,\
+            numRecurrent,\
+            num_input) :
+
+        data_df = pd.read_csv(pathOfRNNinputData).set_index("datetime")
+        data_df.index = pd.to_datetime(data_df.index)
+
+        div_num = int(len(data_df.index)*train_ratio)
+
+        x_df = data_df.iloc[:,:num_input].rank()
+        y_df = data_df.iloc[:,num_input:]
+
+        x_train_df = x_df.iloc[:div_num,:]
+        x_test_df = x_df.iloc[div_num:,:]
+        y_train_df = y_df.iloc[:div_num,:]
+        y_test_df = y_df.iloc[div_num:,:]
+
+        mean = x_train_df.mean()
+        std = x_train_df.std() + 0.00001
+        std = x_train_df.max() - x_train_df.min() + 0.00001
+
+        x_train_list = ((x_train_df-mean)/std).values.tolist()
+        y_train_list = y_train_df.values.tolist()
+        x_test_list = ((x_test_df-mean)/std).values.tolist()
+        y_test_list = y_test_df.values.tolist()
+
+        rnn_train_x = []
+        rnn_train_y = y_train_list[numRecurrent-1:]
+        rnn_test_x = []
+        rnn_test_y = y_test_list[numRecurrent-1:]
+
+        for idx in range(numRecurrent, len(x_train_list)+1) :
+            x_train_entry = x_train_list[idx-numRecurrent:idx]
+            rnn_train_x.append(x_train_entry)
+
+        for idx in range(numRecurrent, len(x_test_list)+1) :
+            x_test_entry = x_test_list[idx-numRecurrent:idx]
+            rnn_test_x.append(x_test_entry)
+
+        if(len(rnn_train_x) != len(rnn_train_y)) :
+            print("shape of input data is not incompatible")
+        rnn_train_x, rnn_train_y = self._shuffleList(rnn_train_x, rnn_train_y)
+
+        return rnn_train_x, rnn_train_y, rnn_test_x, rnn_test_y
+
     def getDNNInputData(\
             self,\
             pathOfDNNinputData,\
@@ -220,9 +279,46 @@ class InputData :
         x_test_df = test_df.iloc[:,:num_input]
         y_train_df = train_df.iloc[:,num_input:]
         y_test_df = test_df.iloc[:,num_input:]
+        self.test_x_noNorm = x_test_df
 
         mean = x_train_df.mean()
         std = x_train_df.std() + 0.0001
+        std = x_train_df.max() - x_train_df.min() + 0.00001
+        self.mean = mean
+        self.std = std
+        
+
+        x_train_list = ((x_train_df-mean)/std).values.tolist()
+        y_train_list = y_train_df.values.tolist()
+        x_test_list = ((x_test_df-mean)/std).values.tolist()
+        y_test_list = y_test_df.values.tolist()
+
+        x_train_list, y_train_list= self._shuffleList(x_train_list, y_train_list)
+
+        return x_train_list, y_train_list, x_test_list, y_test_list
+
+    def getDNNInputDataWithUniformalizing(\
+            self,\
+            pathOfDNNinputData,\
+            train_ratio,\
+            num_input) :
+
+        data_df = pd.read_csv(pathOfDNNinputData).set_index("datetime")
+        data_df.index = pd.to_datetime(data_df.index)
+
+        div_num = int(len(data_df.index)*train_ratio)
+
+        x_df = data_df.iloc[:,:num_input].rank()
+        y_df = data_df.iloc[:,num_input:]
+
+        x_train_df = x_df.iloc[:div_num,:]
+        x_test_df = x_df.iloc[div_num:,:]
+        y_train_df = y_df.iloc[:div_num,:]
+        y_test_df = y_df.iloc[div_num:,:]
+
+        mean = x_train_df.mean()
+        std = x_train_df.std() + 0.0001
+        std = x_train_df.max() - x_train_df.min() + 0.00001
 
         x_train_list = ((x_train_df-mean)/std).values.tolist()
         y_train_list = y_train_df.values.tolist()
@@ -241,7 +337,7 @@ class InputData :
         return listX, listY
 
 
-class SupurPowerElegantAutomaticNeuralNetwork :
+class NeuralNetwork :
 
     def __init__(self, LSTM=None, DNN=None) :
 
@@ -258,6 +354,11 @@ class SupurPowerElegantAutomaticNeuralNetwork :
         self.result = []
         if not os.path.exists(self.config.checkPoint.pathOfCheckpoint):
             os.makedirs(self.config.checkPoint.pathOfCheckpoint)
+
+        if not os.path.exists(self.config.checkPoint.pathOfCheckpoint+"/"+sys.argv[0]):
+            copy2(sys.argv[0], self.config.checkPoint.pathOfCheckpoint)
+            
+        
 
     def _makeMultipleIndependentDNNGraph(\
             self,\
@@ -310,12 +411,12 @@ class SupurPowerElegantAutomaticNeuralNetwork :
             layer_1 = tf.nn.dropout(layer_1, keep_prob)
 
             wx2 = tf.add(tf.matmul(layer_1, weights['h2'][i]), biases['b2'][i])
-            layer_2 = tf.nn.leaky_relu(wx2)
+            layer_2 = tf.nn.tanh(wx2)
             layer_2 = tf.nn.dropout(layer_2, keep_prob)
 
             wx3 = tf.add(tf.matmul(layer_2, weights['h3'][i]), biases['b3'][i])
             layer_3 = wx3
-            layer_3 = tf.nn.tanh(wx3)
+            layer_3 = tf.nn.leaky_relu(wx3)
             layer_3 = tf.nn.dropout(layer_3, keep_prob)
 
             pred = tf.add(tf.matmul(layer_3, weights['out'][i]), biases['out'][i], name="pred")
@@ -668,6 +769,12 @@ class SupurPowerElegantAutomaticNeuralNetwork :
             testPredict = sess.run(self.model.Y_pred_op, feed_dict={self.model.X: self.inputData.test_x, self.model.keep_prob: 1.0})
         return testPredict
 
+    def getResult(self, inputList) :
+        testPredict = []
+        with tf.Session() as sess :
+            testPredict = sess.run(self.model.Y_pred_op, feed_dict={self.model.X: inputList, self.model.keep_prob: 1.0})
+        return testPredict
+
     def _batchTrainer(self, sess, train_op, batch_divider, trainX, trainY, x_placeholder, y_placeholder, keep_prob, output_keep_prob, input_keep_prob) :
         batch_size = len(trainX)//batch_divider+1
         x_batch = []
@@ -741,8 +848,7 @@ class SupurPowerElegantAutomaticNeuralNetwork :
         return accuracyList
 
 def main() :
-    RNN = SupurPowerElegantAutomaticNeuralNetwork(DNN=True)
+    RNN = NeuralNetwork(DNN=True)
     RNN.doTraining()
     RNN.saveResultAsCSV()
 
-main()
