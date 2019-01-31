@@ -6,17 +6,18 @@ import os
 import sys
 from random import shuffle
 from shutil import copy2
+from math import sqrt
 
 
 class Model :
     def __init__(self,NN, LSTM=None, DNN=None) :
 
         if LSTM == True :
-            self.train_op, self.loss_op, self.Y_pred_op, self.saver, self.X, self.Y, self.keep_prob\
+            self.train_op, self.loss_op, self.Y_pred_op, self.saver, self.X, self.Y, self.keep_prob, self.optimizer\
             = NN._makeSimpleLSTMGraph()
 
         if DNN == True :
-            self.train_op, self.loss_op, self.Y_pred_op, self.saver, self.X, self.Y, self.keep_prob\
+            self.train_op, self.loss_op, self.Y_pred_op, self.saver, self.X, self.Y, self.keep_prob, self.optimizer\
             = NN._makeMultipleIndependentDNNGraph()
 
 class InputData : 
@@ -24,102 +25,65 @@ class InputData :
     def __init__(self, inputDataConfiguation, LSTM=None, DNN=None) :
 
         if LSTM == True :
-            self.train_x, self.train_y, self.test_x, self.test_y\
-            = self.getRNNInputData(\
-                    pathOfRNNinputData=inputDataConfiguation.pathOfinputData,\
-                    train_ratio=inputDataConfiguation.train_ratio,\
-                    numRecurrent=inputDataConfiguation.numRecurrent,\
-                    num_input=inputDataConfiguation.num_input)
-
-        if DNN == True :
-            self.train_x, self.train_y, self.test_x, self.test_y\
-            = self.getDNNInputDataWithUniformalizing(\
+            self.train_x, self.train_y, self.test_x, self.test_y, self.testSetIndex\
+            = self.getInputData(\
                     pathOfDNNinputData=inputDataConfiguation.pathOfinputData,\
                     train_ratio=inputDataConfiguation.train_ratio,\
-                    num_input=inputDataConfiguation.num_input)
+                    num_input=inputDataConfiguation.num_input,\
+                    num_recurrence=inputDataConfiguation.numRecurrent,\
+                    normalization_method="minmax",\
+                    data_randomization=True,\
+                    data_uniformalization=False,\
+                    RNN=True)
+
+        if DNN == True :
+            self.train_x, self.train_y, self.test_x, self.test_y, self.testSetIndex\
+            = self.getInputData(\
+                    pathOfDNNinputData=inputDataConfiguation.pathOfinputData,\
+                    train_ratio=inputDataConfiguation.train_ratio,\
+                    num_input=inputDataConfiguation.num_input,\
+                    normalization_method="minmax",\
+                    data_randomization=True,\
+                    data_uniformalization=False,\
+                    RNN=False)
         
-    def getTestX() :
-        return self.test_x_noNorm
-
-    def getNorm() :
-        return self.std, self.mean
-
-    def getRNNInputData(\
-            self,\
-            pathOfRNNinputData,\
-            train_ratio,\
-            numRecurrent,\
-            num_input) :
-
-        data_df = pd.read_csv(pathOfRNNinputData).set_index("datetime")
-        data_df.index = pd.to_datetime(data_df.index)
-
-        div_num = int(len(data_df.index)*train_ratio)
-
-        train_df = data_df.iloc[:div_num,:]
-        test_df = data_df.iloc[div_num:,:]
-
-        x_train_df = train_df.iloc[:,:num_input]
-        x_test_df = test_df.iloc[:,:num_input]
-        y_train_df = train_df.iloc[:,num_input:]
-        y_test_df = test_df.iloc[:,num_input:]
-
-        mean = x_train_df.mean()
-        std = x_train_df.std() + 0.00001
-        std = x_train_df.max() - x_train_df.min() + 0.00001
-
-        x_train_list = ((x_train_df-mean)/std).values.tolist()
-        y_train_list = y_train_df.values.tolist()
-        x_test_list = ((x_test_df-mean)/std).values.tolist()
-        y_test_list = y_test_df.values.tolist()
-
-        rnn_train_x = []
-        rnn_train_y = y_train_list[numRecurrent-1:]
-        rnn_test_x = []
-        rnn_test_y = y_test_list[numRecurrent-1:]
-
-        for idx in range(numRecurrent, len(x_train_list)+1) :
-            x_train_entry = x_train_list[idx-numRecurrent:idx]
-            rnn_train_x.append(x_train_entry)
-
-        for idx in range(numRecurrent, len(x_test_list)+1) :
-            x_test_entry = x_test_list[idx-numRecurrent:idx]
-            rnn_test_x.append(x_test_entry)
-
-        if(len(rnn_train_x) != len(rnn_train_y)) :
-            print("shape of input data is not incompatible")
-        rnn_train_x, rnn_train_y = self._shuffleList(rnn_train_x, rnn_train_y)
-
-        return rnn_train_x, rnn_train_y, rnn_test_x, rnn_test_y
+        self.originDf = pd.read_csv("RNN_input_data_withDeratedPower.csv").set_index("datetime")
     
-    def getRNNInputDataWithUniformalizing(\
-            self,\
-            pathOfRNNinputData,\
-            train_ratio,\
-            numRecurrent,\
-            num_input) :
 
-        data_df = pd.read_csv(pathOfRNNinputData).set_index("datetime")
-        data_df.index = pd.to_datetime(data_df.index)
-
-        div_num = int(len(data_df.index)*train_ratio)
-
-        x_df = data_df.iloc[:,:num_input].rank()
-        y_df = data_df.iloc[:,num_input:]
-
+    def _splitXY(self, df, num_input) :
+        x_df = df.iloc[:,:num_input]
+        y_df = df.iloc[:,num_input:]
+        return x_df, y_df
+    
+    def _splitTrainTest(self, x_df, y_df, train_ratio) :
+        div_num = int(len(x_df.index)*train_ratio)
         x_train_df = x_df.iloc[:div_num,:]
         x_test_df = x_df.iloc[div_num:,:]
         y_train_df = y_df.iloc[:div_num,:]
         y_test_df = y_df.iloc[div_num:,:]
+        return x_train_df, x_test_df, y_train_df, y_test_df
 
+    def _minMaxNormalization(self, x_train_df, x_test_df) :
+        mean = x_train_df.min()
+        std = x_train_df.max() - x_train_df.min() + 0.00001
+        x_train_normedDf = (x_train_df-mean)/std
+        x_test_normedDf = (x_test_df-mean)/std
+        return x_train_normedDf, x_test_normedDf
+
+    def _standardzation(self, x_train_df, x_test_df) :
         mean = x_train_df.mean()
         std = x_train_df.std() + 0.00001
-        std = x_train_df.max() - x_train_df.min() + 0.00001
+        x_train_normedDf = (x_train_df-mean)/std
+        x_test_normedDf = (x_test_df-mean)/std
+        return x_train_normedDf, x_test_normedDf
 
-        x_train_list = ((x_train_df-mean)/std).values.tolist()
+    def _toRNNList(self, x_train_df, y_train_df, x_test_df, y_test_df, numRecurrent) :
+
+        x_train_list = x_train_df.values.tolist()
         y_train_list = y_train_df.values.tolist()
-        x_test_list = ((x_test_df-mean)/std).values.tolist()
+        x_test_list = x_test_df.values.tolist()
         y_test_list = y_test_df.values.tolist()
+        testSetIndex = y_test_df.iloc[numRecurrent-1:,:].index
 
         rnn_train_x = []
         rnn_train_y = y_train_list[numRecurrent-1:]
@@ -134,76 +98,16 @@ class InputData :
             x_test_entry = x_test_list[idx-numRecurrent:idx]
             rnn_test_x.append(x_test_entry)
 
-        if(len(rnn_train_x) != len(rnn_train_y)) :
-            print("shape of input data is not incompatible")
-        rnn_train_x, rnn_train_y = self._shuffleList(rnn_train_x, rnn_train_y)
+        return rnn_train_x, rnn_train_y, rnn_test_x, rnn_test_y, testSetIndex
 
-        return rnn_train_x, rnn_train_y, rnn_test_x, rnn_test_y
+    def _toDNNList(self, x_train_df, y_train_df, x_test_df, y_test_df) :
 
-    def getDNNInputData(\
-            self,\
-            pathOfDNNinputData,\
-            train_ratio,\
-            num_input) :
-
-        data_df = pd.read_csv(pathOfDNNinputData).set_index("datetime")
-        data_df.index = pd.to_datetime(data_df.index)
-
-        div_num = int(len(data_df.index)*train_ratio)
-
-        train_df = data_df.iloc[:div_num,:]
-        test_df = data_df.iloc[div_num:,:]
-
-        x_train_df = train_df.iloc[:,:num_input]
-        x_test_df = test_df.iloc[:,:num_input]
-        y_train_df = train_df.iloc[:,num_input:]
-        y_test_df = test_df.iloc[:,num_input:]
-
-        mean = x_train_df.mean()
-        std = x_train_df.std() + 0.0001
-        std = x_train_df.max() - x_train_df.min() + 0.00001
-        
-
-        x_train_list = ((x_train_df-mean)/std).values.tolist()
+        testSetIndex = y_test_df.index
+        x_train_list = x_train_df.values.tolist()
         y_train_list = y_train_df.values.tolist()
-        x_test_list = ((x_test_df-mean)/std).values.tolist()
+        x_test_list = x_test_df.values.tolist()
         y_test_list = y_test_df.values.tolist()
-
-        x_train_list, y_train_list= self._shuffleList(x_train_list, y_train_list)
-
-        return x_train_list, y_train_list, x_test_list, y_test_list
-
-    def getDNNInputDataWithUniformalizing(\
-            self,\
-            pathOfDNNinputData,\
-            train_ratio,\
-            num_input) :
-
-        data_df = pd.read_csv(pathOfDNNinputData).set_index("datetime")
-        data_df.index = pd.to_datetime(data_df.index)
-
-        div_num = int(len(data_df.index)*train_ratio)
-
-        x_df = data_df.iloc[:,:num_input].rank()
-        y_df = data_df.iloc[:,num_input:]
-
-        x_train_df = x_df.iloc[:div_num,:]
-        x_test_df = x_df.iloc[div_num:,:]
-        y_train_df = y_df.iloc[:div_num,:]
-        y_test_df = y_df.iloc[div_num:,:]
-
-        mean = x_train_df.mean()
-        std = x_train_df.std() + 0.0001
-        std = x_train_df.max() - x_train_df.min() + 0.00001
-
-        x_train_list = ((x_train_df-mean)/std).values.tolist()
-        y_train_list = y_train_df.values.tolist()
-        x_test_list = ((x_test_df-mean)/std).values.tolist()
-        y_test_list = y_test_df.values.tolist()
-
-        x_train_list, y_train_list= self._shuffleList(x_train_list, y_train_list)
-
-        return x_train_list, y_train_list, x_test_list, y_test_list
+        return x_train_list, y_train_list, x_test_list, y_test_list, testSetIndex
 
     def _shuffleList(self, listX, listY) :
         tupleList = [(listX[i], listY[i]) for i in range(0, len(listY))]
@@ -212,6 +116,43 @@ class InputData :
         listY = [tupleList[i][1] for i in range(0, len(listY))]
         return listX, listY
 
+    def getInputData(\
+            self,\
+            pathOfDNNinputData,\
+            train_ratio,\
+            num_input,\
+            num_recurrence=0,\
+            normalization_method="minmax",\
+            data_randomization=True,\
+            data_uniformalization=False,\
+            RNN=False) :
+
+        data_df = pd.read_csv(pathOfDNNinputData).set_index("datetime")
+        data_df.index = pd.to_datetime(data_df.index)
+        
+
+        x_df, y_df = self._splitXY(data_df, num_input)
+
+        if data_uniformalization == True :
+            x_df = x_df.rank()
+
+        x_train_df, x_test_df, y_train_df, y_test_df = self._splitTrainTest(x_df, y_df, train_ratio)
+
+        if normalization_method == "minmax" :
+            x_train_df, x_test_df = self._minMaxNormalization(x_train_df, x_test_df)
+        elif normalization_method == "standarzation" :
+            x_train_df, x_test_df = self._standardzation(x_train_df, x_test_df)
+
+        if RNN == True :
+            train_x, train_y, test_x, test_y, testSetIndex = self._toRNNList(x_train_df, y_train_df, x_test_df, y_test_df, num_recurrence)
+        else :
+            train_x, train_y, test_x, test_y, testSetIndex = self._toDNNList(x_train_df, y_train_df, x_test_df, y_test_df)
+
+        if data_randomization == True :
+            train_x, train_y= self._shuffleList(train_x, train_y)
+
+        return train_x, train_y, test_x, test_y, testSetIndex
+        
 
 class NeuralNetwork :
 
@@ -287,26 +228,33 @@ class NeuralNetwork :
             layer_1 = tf.nn.dropout(layer_1, keep_prob)
 
             wx2 = tf.add(tf.matmul(layer_1, weights['h2'][i]), biases['b2'][i])
-            layer_2 = tf.nn.tanh(wx2)
+            layer_2 = wx2
+            layer_2 = tf.nn.tanh(layer_2)
+           #layer_2 = tf.nn.leaky_relu(layer_2)
             layer_2 = tf.nn.dropout(layer_2, keep_prob)
 
-           #wx3 = tf.add(tf.matmul(layer_2, weights['h3'][i]), biases['b3'][i])
-           #layer_3 = wx3
-           #layer_3 = tf.nn.leaky_relu(wx3)
-           #layer_3 = tf.nn.dropout(layer_3, keep_prob)
+            wx3 = tf.add(tf.matmul(layer_2, weights['h3'][i]), biases['b3'][i])
+            layer_3 = wx3
+            layer_3 = tf.nn.leaky_relu(wx3)
+            layer_3 = tf.nn.dropout(layer_3, keep_prob)
 
             pred = tf.add(tf.matmul(layer_3, weights['out'][i]), biases['out'][i], name="pred")
-            #pred = tf.add(tf.matmul(layer_2, weights['out'][i]), biases['out'][i], name="pred")
+           #pred = tf.add(tf.matmul(layer_2, weights['out'][i]), biases['out'][i], name="pred")
             out_layer.append(pred)
 
         Y_pred = tf.squeeze(tf.stack(out_layer, axis=1), 2)
+        Y_pred = tf.nn.relu(Y_pred)
+        train_op, loss_op, saver, optimizer = self._makeTrainOperator(Y_pred, Y)
 
+        return train_op, loss_op, Y_pred, saver, X, Y, keep_prob, optimizer
+
+    def _makeTrainOperator(self, Y_pred, Y) :
+        learning_rate=self.config.learning.learning_rate
         loss_op = tf.reduce_mean(tf.pow(Y_pred-Y,2), 0)
         optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
         train_op = optimizer.minimize(loss_op, name="train_op")
         saver = tf.train.Saver()
-
-        return train_op, loss_op, Y_pred, saver, X, Y, keep_prob
+        return train_op, loss_op, saver, optimizer
 
     def _makeSuperDeepMultipleIndependentDNNGraph(\
             self,\
@@ -384,13 +332,10 @@ class NeuralNetwork :
             out_layer.append(pred)
 
         Y_pred = tf.squeeze(tf.stack(out_layer, axis=1), 2)
+        train_op, loss_op, saver, optimizer = self._makeTrainOperator(Y_pred, Y)
 
-        loss_op = tf.reduce_mean(tf.pow(Y_pred-Y,2), 0)
-        optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
-        train_op = optimizer.minimize(loss_op, name="train_op")
-        saver = tf.train.Saver()
+        return train_op, loss_op, Y_pred, saver, X, Y, keep_prob, optimizer
 
-        return train_op, loss_op, Y_pred, saver, X, Y, keep_prob
     def _makeDeepLSTMGraph(\
             self,\
             seq_length=None,\
@@ -443,14 +388,9 @@ class NeuralNetwork :
         outputs, _states = tf.nn.dynamic_rnn(cell, X, dtype=tf.float32)
         
         Y_pred = tf.contrib.layers.fully_connected(outputs[:,-1], output_dim, activation_fn=None)
-        loss = tf.reduce_mean(tf.square(Y_pred-Y), 0)
-
-        optimizer = tf.train.AdamOptimizer(learning_rate)
-        train = optimizer.minimize(loss)
-
-        saver = tf.train.Saver()
+        train_op, loss_op, saver, optimizer = self._makeTrainOperator(Y_pred, Y)
         
-        return train, loss, Y_pred, saver, X, Y, keep_prob
+        return train_op, loss_op, Y_pred, saver, X, Y, keep_prob, optimizer
 
     def _makeDeepLSTMGraph_workWellButIDontKnowWhy(\
             self,\
@@ -505,14 +445,9 @@ class NeuralNetwork :
         outputs, _states = tf.nn.dynamic_rnn(cell, X, dtype=tf.float32)
         
         Y_pred = tf.contrib.layers.fully_connected(outputs[:,-1], output_dim, activation_fn=None)
-        loss = tf.reduce_mean(tf.square(Y_pred-Y), 0)
-
-        optimizer = tf.train.AdamOptimizer(learning_rate)
-        train = optimizer.minimize(loss)
-
-        saver = tf.train.Saver()
+        train_op, loss_op, saver, optimizer = self._makeTrainOperator(Y_pred, Y)
         
-        return train, loss, Y_pred, saver, X, Y, keep_prob
+        return train_op, loss_op, Y_pred, saver, X, Y, keep_prob, optimizer
 
     def _makeSimpleLSTMGraph(\
             self,\
@@ -550,14 +485,9 @@ class NeuralNetwork :
         outputs, _states = tf.nn.dynamic_rnn(cell, X, dtype=tf.float32)
         
         Y_pred = tf.contrib.layers.fully_connected(outputs[:,-1], output_dim, activation_fn=None)
-        loss = tf.reduce_mean(tf.square(Y_pred-Y), 0)
+        train_op, loss_op, saver, optimizer = self._makeTrainOperator(Y_pred, Y)
         
-        optimizer = tf.train.AdamOptimizer(learning_rate)
-        train = optimizer.minimize(loss)
-
-        saver = tf.train.Saver()
-        
-        return train, loss, Y_pred, saver, X, Y, keep_prob
+        return train_op, loss_op, Y_pred, saver, X, Y, keep_prob, optimizer
 
     def doTraining(\
             self,\
@@ -613,7 +543,20 @@ class NeuralNetwork :
                 saver.restore(sess, ckpt_path)
                 init_step = int(ckpt_path.rsplit("-")[1])
             
-            for step in range(init_step, howManyEpoch+1) :
+            learningRateModificationCount = 0
+            for step in range(init_step, howManyEpoch) :
+
+                if ((step % display_step) == 0) :
+                    loss, cur_lr = sess.run([loss_op, self.model.optimizer._lr_t], feed_dict={x_placeholder: trainX, y_placeholder: trainY, keep_prob: input_keep_prob})
+                    testPredict = sess.run(Y_pred_op, feed_dict={x_placeholder: testX, y_placeholder: testY, keep_prob: 1.0})
+                    print("Epoch "+str(step)+", cost = ", loss, ("learningRate : %.6f" % (cur_lr)))
+                    self._modelEvaluation(predList=testPredict, labelList=testY)
+                    if step == (howManyEpoch-1) :
+                        break
+
+                if ((step % save_step) == 0) :
+                    print("save current state")
+                    saver.save(sess, pathOfCheckpoint+filenameOfCheckpoint, global_step=step)
 
                 self._batchTrainer(sess=sess,\
                         train_op=train_op,\
@@ -626,15 +569,6 @@ class NeuralNetwork :
                         output_keep_prob=output_keep_prob,\
                         input_keep_prob=input_keep_prob)
 
-                if ((step % display_step) == 0 ) :
-                    loss = sess.run(loss_op, feed_dict={x_placeholder: trainX, y_placeholder: trainY, keep_prob: input_keep_prob})
-                    testPredict = sess.run(Y_pred_op, feed_dict={x_placeholder: testX, keep_prob: 1.0})
-                    print("Step "+str(step)+", cost = ", loss)
-                    self._modelEvaluation(predList=testPredict, labelList=testY)
-
-                if ((step % save_step) == 0) :
-                    print("save current state")
-                    saver.save(sess, pathOfCheckpoint+filenameOfCheckpoint, global_step=step)
                 
             self.result = sess.run(Y_pred_op, feed_dict={x_placeholder: testX, keep_prob: 1.0})
             return self.result
@@ -673,12 +607,15 @@ class NeuralNetwork :
         if result == None :
             result=self.result
             testY=self.inputData.test_y
+            testSetIndex=self.inputData.testSetIndex
 
-        df = pd.DataFrame()
+        df = pd.DataFrame(index=testSetIndex)
         for i in range(0, len(result[0])) :
             df["pred_"+str(i)] = [entry[i] for entry in result]
         for i in range(0, len(testY[0])) :
             df["label_"+str(i)] = [entry[i] for entry in testY]
+        
+        df = df.join(self.inputData.originDf["D.DeRatedPower"])
         df.to_csv(self.config.learning.resultPath)
 
     def _modelEvaluation(self, predList, labelList) :
@@ -694,8 +631,8 @@ class NeuralNetwork :
         toPrint = ""
         labelList = self.config.inputData.labelList
         for idx in range(len(predDfList)) :
-            toPrint += ("-"*32 + "  %s  " + "-"*32+"\n") % labelList[idx]
-            toPrint += "%20s | %20s | %12s | %24s\n" % ("base percentage", "underbase value", "deviation", "10% inner count ratio")
+            toPrint += ("-"*43 + "  %s  " + "-"*43+"\n") % labelList[idx]
+            toPrint += "%20s | %20s | %9s | %9s | %9s | %24s\n" % ("base percentage", "underbase value", "PE", "RMSE", "MAE", "10% inner count ratio")
             toPrint += self._reportAccuracy(predDfList[idx], labelDfList[idx])
         print(toPrint)
 
@@ -704,7 +641,7 @@ class NeuralNetwork :
         accuracyTupleList = self._getAccuracyConsideringPercentile(predDf, labelDf)
         for tupleEntry in accuracyTupleList :
             if(tupleEntry[0] % 10 == 0) :
-                toPrint += ("%19d%% | %20.4f | %11.4f%% | %23.4f%%\n" % tupleEntry)
+                toPrint += ("%19d%% | %20.4f | %8.4f%% | %8.4f%% | %8.4f%% | %23.4f%%\n" % tupleEntry)
         return toPrint
         
         
@@ -715,11 +652,13 @@ class NeuralNetwork :
             percentileValue = labelDf.quantile(percent)
             srcDf = labelDf[labelDf > percentileValue]
             dstDf = predDf[labelDf > percentileValue]
-            deviation = ((dstDf-srcDf)/srcDf).abs().mean()*100
+            PE = ((srcDf-dstDf)/srcDf).abs().mean()*100
+            RMSE = sqrt(((dstDf-srcDf)**2).mean())/srcDf.mean()*100
+            MAE = ((dstDf-srcDf).abs().mean())/srcDf.mean()*100
             underBoundary = srcDf*0.9
             upperBoundary = srcDf*1.1
             countRatio = dstDf[(underBoundary < dstDf) & (dstDf < upperBoundary)].count()/dstDf.count()*100
-            accuracyTuple = (int(percent*100), percentileValue, deviation, countRatio)
+            accuracyTuple = (int(percent*100), percentileValue, PE, RMSE, MAE, countRatio)
             accuracyList.append(accuracyTuple)
         return accuracyList
 
@@ -728,3 +667,4 @@ def main() :
     RNN.doTraining()
     RNN.saveResultAsCSV()
 
+main()

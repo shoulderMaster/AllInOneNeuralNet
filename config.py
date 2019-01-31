@@ -9,7 +9,7 @@ class CheckPointConfiguration :
             self.save_step= 200
 
         if DNN == True :
-            self.pathOfCheckpoint = "./model_export/removeActivePower_dnn_noPred"
+            self.pathOfCheckpoint = "./model_export/withDeratedPower_512nodes_30dropout_3hiddenLayer_05_Outrelu_minMax"
             self.filenameOfCheckpoint = "/model_data"
             self.save_step= 30
 
@@ -26,8 +26,8 @@ class InputDataConfiguration :
             self.labelList = ["Active Power (W)", "Generator Speed (RPM)"]
 
         if DNN == True :
-            self.pathOfinputData = "./RNN_input_data.csv"
-            self.num_input = 5
+            self.pathOfinputData = "./RNN_input_data_withDeratedPower.csv"
+            self.num_input = 6
             self.num_label = 1
             self.train_ratio = 0.7
             #self.labelList = ["Active Power (W)", "Derated Power (W)", "Generator Speed (RPM)"]
@@ -49,14 +49,14 @@ class LearningConfiguration :
             self.display_step = 30
 
         if DNN == True :
-            self.resultPath = "result_DNN.csv"
-            self.batchDivider = 8
+            self.resultPath = "result_DNN_05_relu_minMax.csv"
+            self.batchDivider = 3
             self.learning_rate = 0.001
-            self.dropoutRate = 0.2
+            self.dropoutRate = 0.3
             self.input_keep_prob = 1 - self.dropoutRate
-            self.numLearningEpoch = 1000+1
-            self.display_step = 20
-            self.n_hidden_1 = self.n_hidden_2 = self.n_hidden_3 = 16
+            self.numLearningEpoch = 45000+1
+            self.display_step = 60
+            self.n_hidden_1 = self.n_hidden_2 = self.n_hidden_3 = 512
             self.hiddenLayer = 10
             self.n_hidden = 512
 
